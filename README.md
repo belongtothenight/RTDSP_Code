@@ -19,3 +19,6 @@
 | 13. | w5_code4_2.m | Function version of w5_code4_1.m.                                                                    |
 
 ## Notes
+
+1. "w1_v1.m" and "w1_v2.m" can't properly sample sinewave.
+2. "w5_code3_0.m" can use the same method to generate zero-mean and unit-variance white noise with "w5_code4_1.m".
