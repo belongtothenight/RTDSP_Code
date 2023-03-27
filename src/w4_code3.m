@@ -1,0 +1,13 @@
+N=100;
+f=950;
+fs=10000;
+n=[0:N-1];
+k=[0:N-1];
+omega=2*pi*f/fs;
+xn=sin(omega*n);
+Xk=fft(xn, N);
+magXk=20*log10(abs(Xk));
+plot(k, magXk);
+axis([0, N/2, -inf, inf]);
+xlabel('Frequency index, k');
+ylabel('Magnitude in dB');
