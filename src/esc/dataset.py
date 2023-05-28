@@ -6,6 +6,7 @@ import pydub
 import math
 import sys
 import gc
+import time
 import logging
 import gammatone.gtgram
 import multiprocessing as mp
@@ -18,7 +19,9 @@ class Dataset:
     config.read(r"./src/esc/configfile.ini")
     numba_logger = logging.getLogger("numba")
     numba_logger.setLevel(logging.WARNING)
-    logging.info("Loaded config file.")
+    pydub_logger = logging.getLogger("pydub")
+    pydub_logger.setLevel(logging.WARNING)
+    logging.basicConfig(level=logging.DEBUG)
 
     class Audio:
         """The actual audio data of the clip.
@@ -96,7 +99,7 @@ class Dataset:
             )
             case = pd.DataFrame(
                 data={
-                    "filename": [os.path.basename(self.fileList[indexA][indexB])],
+                    "filename": [os.path.basename(self.fileList[indexA][indexB])[:-4]],
                     "category": [self.categoryList[indexA]],
                 }
             )
@@ -158,11 +161,78 @@ class Dataset:
                 )[0:]
                 case = case.join(lpq1d_256_mean)
                 case = case.join(lpq1d_256_std)
+            if Dataset.config["feature"]["ELBP"] == "True":
+                self._compute_elbp(audio, 2)
+                elbp_mean = pd.DataFrame(np.mean(self.elbp[:, :], axis=0)[0:]).T
+                elbp_mean.columns = list(
+                    "ELBP_{} mean".format(i) for i in range(np.shape(self.elbp)[1])
+                )[0:]
+                elbp_std = pd.DataFrame(np.std(self.elbp[:, :], axis=0)[0:]).T
+                elbp_std.columns = list(
+                    "ELBP_{} std dev".format(i) for i in range(np.shape(self.elbp)[1])
+                )[0:]
+                case = case.join(elbp_mean)
+                case = case.join(elbp_std)
+            if Dataset.config["feature"]["VAR"] == "True":
+                self._compute_var(audio, 2)
+                var_mean = pd.DataFrame(np.mean(self.var[:, :], axis=0)[0:]).T
+                var_mean.columns = list(
+                    "VAR_{} mean".format(i) for i in range(np.shape(self.var)[1])
+                )[0:]
+                var_std = pd.DataFrame(np.std(self.var[:, :], axis=0)[0:]).T
+                var_std.columns = list(
+                    "VAR_{} std dev".format(i) for i in range(np.shape(self.var)[1])
+                )[0:]
+                case = case.join(var_mean)
+                case = case.join(var_std)
+            if Dataset.config["feature"]["STE"] == "True":
+                self._compute_ste(S)
+                case["STE mean"] = np.mean(self.ste)
+                case["STE std dev"] = np.std(self.ste)
+            if Dataset.config["feature"]["ZCR"] == "True":
+                self._compute_zcr(audio)
+                case["ZCR mean"] = np.mean(self.zcr)
+                case["ZCR std dev"] = np.std(self.zcr)
+            if Dataset.config["feature"]["GFCC"] == "True":
+                self._compute_gfcc(audio)
+                gfcc_mean = pd.DataFrame(np.mean(self.gfcc[:, :], axis=0)[0:]).T
+                gfcc_mean.columns = list(
+                    "GFCC_{} mean".format(i) for i in range(np.shape(self.gfcc)[1])
+                )[0:]
+                gfcc_std = pd.DataFrame(np.std(self.gfcc[:, :], axis=0)[0:]).T
+                gfcc_std.columns = list(
+                    "GFCC_{} std dev".format(i) for i in range(np.shape(self.gfcc)[1])
+                )[0:]
+                case = case.join(gfcc_mean)
+                case = case.join(gfcc_std)
+            if Dataset.config["feature"]["CQT"] == "True":
+                self._compute_cqt(audio)
+                cqt_mean = pd.DataFrame(np.mean(self.cqt[:, :], axis=0)[0:]).T
+                cqt_mean.columns = list(
+                    "CQT_{} mean".format(i) for i in range(np.shape(self.cqt)[1])
+                )[0:]
+                cqt_std = pd.DataFrame(np.std(self.cqt[:, :], axis=0)[0:]).T
+                cqt_std.columns = list(
+                    "CQT_{} std dev".format(i) for i in range(np.shape(self.cqt)[1])
+                )[0:]
+                case = case.join(cqt_mean)
+                case = case.join(cqt_std)
+            if Dataset.config["feature"]["CHROMA"] == "True":
+                self._compute_chroma(S)
+                chroma_mean = pd.DataFrame(np.mean(self.chroma[:, :], axis=0)[0:]).T
+                chroma_mean.columns = list(
+                    "CHROMA_{} mean".format(i) for i in range(np.shape(self.chroma)[1])
+                )[0:]
+                chroma_std = pd.DataFrame(np.std(self.chroma[:, :], axis=0)[0:]).T
+                chroma_std.columns = list(
+                    "CHROMA_{} std dev".format(i)
+                    for i in range(np.shape(self.chroma)[1])
+                )[0:]
+                case = case.join(chroma_mean)
+                case = case.join(chroma_std)
 
             self.cases = pd.concat([self.cases, case], ignore_index=True)
-
-            # * Save array to h5 file
-            pass
+            gc.collect()
 
     def _compute_mel_mfcc(self, audio, mfcc):
         # Compute Mel Spectogram with 2048 FFT window length, HOP Length 1024, 128 bands
@@ -577,10 +647,42 @@ class Dataset:
     def process(self):
         # todo : Multiprocess the "_processAudio" function
         # * Multiprocessing
-        pass
+        logging.info("Processing audio files.")
+        for i, val in enumerate(self.fileList):
+            for j, val in enumerate(val):
+                logging.info("Adding process to queue: {} {}".format(i, j))
+                p = mp.Process(target=self._processAudio, args=(i, j))
+                p.start()
+        logging.info("Added all processes to queue.")
+
+    def saveData(self):
+        # * Save dataframe to h5 file
+        self.cases.to_hdf(
+            Dataset.config["experiment"]["dataframe"],
+            key=Dataset.config["experiment"]["dataset"],
+            mode="w",
+        )
 
 
 if __name__ == "__main__":
+    start = time.time()
     dataset = Dataset()
-    dataset._processAudio(0, 0)
-    print(dataset.cases)
+    # dataset._processAudio(0, 0)
+    # print(dataset.cases)
+    # print(dataset.cases.columns)
+
+    # with open("dataset.txt", "w") as f:
+    #     for i in dataset.cases.columns.values.tolist():
+    #         f.write(i + "\n")
+
+    # row = dataset.cases.iloc[0]
+    # with open("value.txt", "w") as f:
+    #     for i in row.values.tolist():
+    #         f.write(str(i) + "\n")
+
+    dataset.process()
+    dataset.saveData()
+    end = time.time()
+    print("Time taken: {} seconds".format(end - start))
+    print("Time taken: {} minutes".format((end - start) / 60))
+    print("Time taken: {} hours".format((end - start) / 3600))
