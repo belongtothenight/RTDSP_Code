@@ -13,22 +13,55 @@ from configparser import ConfigParser
 
 
 class Dataset:
-    def __init__(self, configFilePath) -> None:
+    # * Load config settings
+    config = ConfigParser()
+    config.read(r"./src/esc/configfile.ini")
+    numba_logger = logging.getLogger("numba")
+    numba_logger.setLevel(logging.WARNING)
+    logging.info("Loaded config file.")
+
+    class Audio:
+        """The actual audio data of the clip.
+
+        Uses a context manager to load/unload the raw audio data. This way clips
+        can be processed sequentially with reasonable memory usage.
+        """
+
+        def __init__(self, path, duration):
+            self.path = path
+            self.duration = duration
+
+        def __enter__(self):
+            # Actual recordings are sometimes not frame accurate, so we trim/overlay to exactly duration seconds
+            self.data = pydub.AudioSegment.silent(duration=self.duration)
+            self.data = self.data.overlay(
+                (
+                    pydub.AudioSegment.from_file(self.path)
+                    .set_frame_rate(int(Dataset.config["segmentation"]["RATE"]))
+                    .set_channels(1)
+                )[0 : self.duration]
+            )
+            self.raw = (np.frombuffer(self.data._data, dtype="int16") + 0.5) / (
+                0x7FFF + 0.5
+            )  # convert to float
+            return self
+
+        def __exit__(self, exception_type, exception_value, traceback):
+            if exception_type is not None:
+                print(exception_type, exception_value, traceback)
+            del self.data
+            del self.raw
+
+    def __init__(self) -> None:
         """
         self.categoryList = ['category']
         self.fileList = [['file1', 'file2'], ['file1', 'file2']]
         self.audioData = [[np.array, np.array], [np.array, np.array]]
         self.featureData = DataFrame (index = [category], columns = [feature1, feature2, feature3, ...])
         """
-        # * Load config settings
-        self.config = ConfigParser()
-        self.config.read(configFilePath)
-        numba_logger = logging.getLogger("numba")
-        numba_logger.setLevel(logging.WARNING)
-        logging.info("Loaded config file.")
         # * Load Audio Dataset Path
         logging.info("Loading dataset.")
-        datasetPath = self.config["path"][self.config["experiment"]["dataset"]]
+        datasetPath = Dataset.config["path"][Dataset.config["experiment"]["dataset"]]
         self.categoryList = []
         self.fileList = []
         for root, dirs, files in os.walk(datasetPath):
@@ -49,84 +82,95 @@ class Dataset:
 
     def _processAudio(self, indexA, indexB):
         # todo : Make this function to perform audio segmentation and feature extraction for a single audio file
-        # * trim/overlay to exactly duration seconds
-        data = pydub.AudioSegment.silent(
-            duration=int(self.config["segmentation"]["duration"])
+        self.audio = Dataset.Audio(
+            self.fileList[indexA][indexB],
+            int(Dataset.config["segmentation"]["duration"]),
         )
-        data = data.overlay(
-            (pydub.AudioSegment.from_file(self.fileList[indexA][indexB]))
-            .set_frame_rate(int(self.config["segmentation"]["RATE"]))
-            .set_channels(int(self.config["segmentation"]["CHANNELS"]))[
-                0 : int(self.config["segmentation"]["duration"])
-            ]
-        )
-        raw = (np.frombuffer(data._data, dtype="int16") + 0.5) / (0x7FFF + 0.5)
-        S = np.abs(
-            librosa.stft(
-                y=raw,
-                n_fft=int(self.config["segmentation"]["FRAME"]),
-                hop_length=int(self.config["segmentation"]["HOP"]),
+        with self.audio as audio:
+            S = np.abs(
+                librosa.stft(
+                    y=self.audio.raw,
+                    n_fft=int(Dataset.config["segmentation"]["FRAME"]),
+                    hop_length=int(Dataset.config["segmentation"]["HOP"]),
+                )
             )
-        )
-        case = pd.DataFrame(
-            data={
-                "filename": [os.path.basename(self.fileList[indexA][indexB])],
-                "category": [self.categoryList[indexA]],
-            }
-        )
+            case = pd.DataFrame(
+                data={
+                    "filename": [os.path.basename(self.fileList[indexA][indexB])],
+                    "category": [self.categoryList[indexA]],
+                }
+            )
 
-        # * Feature Extraction
-        if self.config["feature"]["MFCC"] == "True":
-            self._compute_mel_mfcc(raw, True)
-            mfcc_mean = pd.DataFrame(np.mean(self.mfcc[:, :], axis=0)[0:]).T
-            mfcc_mean.columns = list(
-                "MFCC_{} mean".format(i) for i in range(np.shape(self.mfcc)[1])
-            )[0:]
-            mfcc_std = pd.DataFrame(np.std(self.mfcc[:, :], axis=0)[0:]).T
-            mfcc_std.columns = list(
-                "MFCC_{} std dev".format(i) for i in range(np.shape(self.mfcc)[1])
-            )[0:]
-            case = case.join(mfcc_mean)
-            case = case.join(mfcc_std)
-        if self.config["feature"]["LBP"] == "True":
-            self._compute_lbp(raw, 2)
-            lbp_mean = pd.DataFrame(np.mean(self.lbp[:, :], axis=0)[0:]).T
-            lbp_mean.columns = list(
-                "LBP_{} mean".format(i) for i in range(np.shape(self.lbp)[1])
-            )[0:]
-            lbp_std = pd.DataFrame(np.std(self.lbp[:, :], axis=0)[0:]).T
-            lbp_std.columns = list(
-                "LBP_{} std dev".format(i) for i in range(np.shape(self.lbp)[1])
-            )[0:]
-            case = case.join(lbp_mean)
-            case = case.join(lbp_std)
-        if self.config["feature"]["LBP1D"] == "True":
-            self._compute_lbp1d(raw, True)
-            lbp1d_256_mean = pd.DataFrame(np.mean(self.lbp1d_256[:, :], axis=0)[0:]).T
-            lbp1d_256_mean.columns = list(
-                "LBP1D_256_{} mean".format(i)
-                for i in range(np.shape(self.lbp1d_256)[1])
-            )[0:]
-            lbp1d_256_std = pd.DataFrame(np.std(self.lbp1d_256[:, :], axis=0)[0:]).T
-            lbp1d_256_std.columns = list(
-                "LBP1D_256_{} std dev".format(i)
-                for i in range(np.shape(self.lbp1d_256)[1])
-            )[0:]
-            case = case.join(lbp1d_256_mean)
-            case = case.join(lbp1d_256_std)
+            # * Feature Extraction
+            if Dataset.config["feature"]["MFCC"] == "True":
+                self._compute_mel_mfcc(audio, True)
+                mfcc_mean = pd.DataFrame(np.mean(self.mfcc[:, :], axis=0)[0:]).T
+                mfcc_mean.columns = list(
+                    "MFCC_{} mean".format(i) for i in range(np.shape(self.mfcc)[1])
+                )[0:]
+                mfcc_std = pd.DataFrame(np.std(self.mfcc[:, :], axis=0)[0:]).T
+                mfcc_std.columns = list(
+                    "MFCC_{} std dev".format(i) for i in range(np.shape(self.mfcc)[1])
+                )[0:]
+                case = case.join(mfcc_mean)
+                case = case.join(mfcc_std)
+            if Dataset.config["feature"]["LBP"] == "True":
+                self._compute_lbp(audio, 2)
+                lbp_mean = pd.DataFrame(np.mean(self.lbp[:, :], axis=0)[0:]).T
+                lbp_mean.columns = list(
+                    "LBP_{} mean".format(i) for i in range(np.shape(self.lbp)[1])
+                )[0:]
+                lbp_std = pd.DataFrame(np.std(self.lbp[:, :], axis=0)[0:]).T
+                lbp_std.columns = list(
+                    "LBP_{} std dev".format(i) for i in range(np.shape(self.lbp)[1])
+                )[0:]
+                case = case.join(lbp_mean)
+                case = case.join(lbp_std)
+            if Dataset.config["feature"]["LBP1D"] == "True":
+                self._compute_lbp1d(audio, True)
+                lbp1d_256_mean = pd.DataFrame(
+                    np.mean(self.lbp1d_256[:, :], axis=0)[0:]
+                ).T
+                lbp1d_256_mean.columns = list(
+                    "LBP1D_256_{} mean".format(i)
+                    for i in range(np.shape(self.lbp1d_256)[1])
+                )[0:]
+                lbp1d_256_std = pd.DataFrame(np.std(self.lbp1d_256[:, :], axis=0)[0:]).T
+                lbp1d_256_std.columns = list(
+                    "LBP1D_256_{} std dev".format(i)
+                    for i in range(np.shape(self.lbp1d_256)[1])
+                )[0:]
+                case = case.join(lbp1d_256_mean)
+                case = case.join(lbp1d_256_std)
+            if Dataset.config["feature"]["LPQ1D"] == "True":
+                self._compute_lpq1d(audio, True)
+                lpq1d_256_mean = pd.DataFrame(
+                    np.mean(self.lpq1d_256[:, :], axis=0)[0:]
+                ).T
+                lpq1d_256_mean.columns = list(
+                    "LPQ1D_256_{} mean".format(i)
+                    for i in range(np.shape(self.lpq1d_256)[1])
+                )[0:]
+                lpq1d_256_std = pd.DataFrame(np.std(self.lpq1d_256[:, :], axis=0)[0:]).T
+                lpq1d_256_std.columns = list(
+                    "LPQ1D_256_{} std dev".format(i)
+                    for i in range(np.shape(self.lpq1d_256)[1])
+                )[0:]
+                case = case.join(lpq1d_256_mean)
+                case = case.join(lpq1d_256_std)
 
-        self.cases = pd.concat([self.cases, case], ignore_index=True)
+            self.cases = pd.concat([self.cases, case], ignore_index=True)
 
-        # * Save array to h5 file
-        pass
+            # * Save array to h5 file
+            pass
 
     def _compute_mel_mfcc(self, audio, mfcc):
         # Compute Mel Spectogram with 2048 FFT window length, HOP Length 1024, 128 bands
         self.melspectrogram = librosa.feature.melspectrogram(
-            y=audio,
-            n_fft=int(self.config["segmentation"]["FRAME"]),
-            sr=int(self.config["segmentation"]["RATE"]),
-            hop_length=int(self.config["segmentation"]["HOP"]),
+            y=audio.raw,
+            n_fft=int(Dataset.config["segmentation"]["FRAME"]),
+            sr=int(Dataset.config["segmentation"]["RATE"]),
+            hop_length=int(Dataset.config["segmentation"]["HOP"]),
             n_mels=128,
         )
         # Compute MFCC
@@ -139,8 +183,8 @@ class Dataset:
         # Compute constant-Q power spectrum with HOP Length 1024 and 128 bands
         C = librosa.cqt(
             y=audio.raw,
-            sr=int(self.config["segmentation"]["RATE"]),
-            hop_length=int(self.config["segmentation"]["HOP"]),
+            sr=int(Dataset.config["segmentation"]["RATE"]),
+            hop_length=int(Dataset.config["segmentation"]["HOP"]),
             n_bins=128,
             bins_per_octave=128,
         )
@@ -150,9 +194,9 @@ class Dataset:
         # Compute a chromagram from power spectrogram with HOP Length 1024 and 128 bands
         c = librosa.feature.chroma_stft(
             S=spectre,
-            n_fft=int(self.config["segmentation"]["FRAME"]),
-            sr=int(self.config["segmentation"]["RATE"]),
-            hop_length=int(self.config["segmentation"]["HOP"]),
+            n_fft=int(Dataset.config["segmentation"]["FRAME"]),
+            sr=int(Dataset.config["segmentation"]["RATE"]),
+            hop_length=int(Dataset.config["segmentation"]["HOP"]),
             n_chroma=128,
         )
         self.chroma = c.transpose()
@@ -161,18 +205,18 @@ class Dataset:
         # Compute a gammatone filter bank from signal with HOP Length 1024 and 128 bands
         c = gammatone.gtgram.gtgram(
             audio.raw,
-            fs=int(self.config["segmentation"]["RATE"]),
-            window_time=int(self.config["segmentation"]["FRAME"])
-            / int(self.config["segmentation"]["RATE"]),
-            hop_time=int(self.config["segmentation"]["HOP"])
-            / int(self.config["segmentation"]["RATE"]),
+            fs=int(Dataset.config["segmentation"]["RATE"]),
+            window_time=int(Dataset.config["segmentation"]["FRAME"])
+            / int(Dataset.config["segmentation"]["RATE"]),
+            hop_time=int(Dataset.config["segmentation"]["HOP"])
+            / int(Dataset.config["segmentation"]["RATE"]),
             channels=128,
             f_min=0,
         )
         nframes = int(
             np.ceil(
-                (len(audio.data) / 1000.0 * int(self.config["segmentation"]["RATE"]))
-                / int(self.config["segmentation"]["HOP"])
+                (len(audio.data) / 1000.0 * int(Dataset.config["segmentation"]["RATE"]))
+                / int(Dataset.config["segmentation"]["HOP"])
             )
         )
         if c.shape[1] < nframes:  # pad first and last column
@@ -193,17 +237,12 @@ class Dataset:
             np.ceil(
                 len(audio.data)
                 / 1000.0
-                * int(self.config["segmentation"]["RATE"])
-                / int(self.config["segmentation"]["HOP"])
+                * int(Dataset.config["segmentation"]["RATE"])
+                / int(Dataset.config["segmentation"]["HOP"])
             )
         )
         for f in range(0, frames):
-            frame = Dataset._get_frame(
-                audio,
-                f,
-                int(self.config["segmentation"]["HOP"]),
-                int(self.config["segmentation"]["FRAME"]),
-            )
+            frame = Dataset._get_frame(audio, f)
             frLgth = len(frame)
             histo64 = []
             histo256 = []
@@ -232,6 +271,8 @@ class Dataset:
             # print(np.shape(squWinTotal))
             squWinTotalRavel = squWinTotal.ravel()
             # Short FFT computation with midSzWind window length, szWind hop length
+            # if np.shape(squWinTotalRavel)[0] < szWind:
+            #     continue
             audioFFT = librosa.stft(squWinTotalRavel, n_fft=szWind, hop_length=szWind)
             audioShape = np.shape(audioFFT)
             # print(audioShape)# should be (midSzWind,frLgth-szWind)
@@ -273,17 +314,12 @@ class Dataset:
             np.ceil(
                 len(audio.data)
                 / 1000.0
-                * int(self.config["segmentation"]["RATE"])
-                / int(self.config["segmentation"]["HOP"])
+                * int(Dataset.config["segmentation"]["RATE"])
+                / int(Dataset.config["segmentation"]["HOP"])
             )
         )
         for i in range(0, frames):
-            frame = Dataset._get_frame(
-                audio,
-                i,
-                int(self.config["segmentation"]["HOP"]),
-                int(self.config["segmentation"]["FRAME"]),
-            )
+            frame = Dataset._get_frame(audio, i)
             histoBin64 = 64
             histoBin256 = 256
             histo64 = []
@@ -482,31 +518,25 @@ class Dataset:
         self.zcr = []
         frames = int(
             np.ceil(
-                (len(audio.data) / 1000.0 * int(self.config["segmentation"]["RATE"]))
-                / int(self.config["segmentation"]["HOP"])
+                (len(audio.data) / 1000.0 * int(Dataset.config["segmentation"]["RATE"]))
+                / int(Dataset.config["segmentation"]["HOP"])
             )
         )
 
         for i in range(0, frames):
-            frame = Dataset._get_frame(
-                audio,
-                i,
-                int(self.config["segmentation"]["HOP"]),
-                int(self.config["segmentation"]["FRAME"]),
-            )
+            frame = Dataset._get_frame(audio, i)
             self.zcr.append(np.mean(0.5 * np.abs(np.diff(np.sign(frame)))))
         self.zcr = np.asarray(self.zcr)
 
     @classmethod
-    def _get_frame(cls, audio, index, hop, frame):
+    def _get_frame(cls, audio, index):
         if index < 0:
             return None
-        return audio[
-            # (index * int(cls.config["segmentation"]["HOP"])) : (
-            #     index * int(cls.config["segmentation"]["HOP"])
-            #     + int(cls.config["segmentation"]["FRAME"])
-            # )
-            (index * hop) : (index * hop + frame)
+        return audio.raw[
+            (index * int(Dataset.config["segmentation"]["HOP"])) : (
+                index * int(Dataset.config["segmentation"]["HOP"])
+                + int(Dataset.config["segmentation"]["FRAME"])
+            )
         ]
 
     @classmethod
@@ -551,7 +581,6 @@ class Dataset:
 
 
 if __name__ == "__main__":
-    configFilePath = r"./src/esc/configfile.ini"
-    dataset = Dataset(configFilePath)
+    dataset = Dataset()
     dataset._processAudio(0, 0)
     print(dataset.cases)
