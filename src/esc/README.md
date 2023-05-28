@@ -18,7 +18,7 @@ url = {<https://doi.org/10.7910/DVN/YDEPUT}>
 
 ## Structure
 
-1. Model training
+1. Model training and evaluating
 2. Offline processing
 3. Inline processing
 
@@ -29,3 +29,11 @@ url = {<https://doi.org/10.7910/DVN/YDEPUT}>
 3. TV, conversation (high freq)
 4. phone ring, door-bell
 5. traffic (police, firefighter, emergency, trash, normal)
+
+## Ideal Dataset Directory Structure
+
+|--- dataset folder
+  |--- category A
+    |--- file A
+  |--- category B
+    |--- file B
