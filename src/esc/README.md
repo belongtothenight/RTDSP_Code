@@ -4,7 +4,7 @@ Environmental Sound Classification Using Local Binary Pattern and Audio Features
 This code is referenced from <https://github.com/ohinitoffa/esc/tree/main>.
 
 Dataset is from: 
-`
+```
 @data{DVN/YDEPUT_2015,
 author = {Karol J. Piczak},
 publisher = {Harvard Dataverse},
@@ -14,7 +14,7 @@ version = {V2},
 doi = {10.7910/DVN/YDEPUT},
 url = {<https://doi.org/10.7910/DVN/YDEPUT}>
 }
-`
+```
 
 ## Structure
 
