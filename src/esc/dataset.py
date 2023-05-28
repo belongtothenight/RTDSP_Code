@@ -25,9 +25,9 @@ class Dataset:
         self.config.read(configFilePath)
         numba_logger = logging.getLogger("numba")
         numba_logger.setLevel(logging.WARNING)
-        logging.info(f"Loaded config file.")
+        logging.info("Loaded config file.")
         # * Load Audio Dataset Path
-        logging.info(f"Loading dataset.")
+        logging.info("Loading dataset.")
         datasetPath = self.config["path"][self.config["experiment"]["dataset"]]
         self.categoryList = []
         self.fileList = []
@@ -41,7 +41,7 @@ class Dataset:
                     path = os.path.normpath(path)
                     self.fileList[i].append(path)
         # * Setup Variables
-        logging.info(f"Loading audio files.")
+        logging.info("Loading audio files.")
         self.audioData = np.empty(
             (len(self.categoryList), len(self.fileList[0])), dtype=object
         )
@@ -100,6 +100,20 @@ class Dataset:
             )[0:]
             case = case.join(lbp_mean)
             case = case.join(lbp_std)
+        if self.config["feature"]["LBP1D"] == "True":
+            self._compute_lbp1d(raw, True)
+            lbp1d_256_mean = pd.DataFrame(np.mean(self.lbp1d_256[:, :], axis=0)[0:]).T
+            lbp1d_256_mean.columns = list(
+                "LBP1D_256_{} mean".format(i)
+                for i in range(np.shape(self.lbp1d_256)[1])
+            )[0:]
+            lbp1d_256_std = pd.DataFrame(np.std(self.lbp1d_256[:, :], axis=0)[0:]).T
+            lbp1d_256_std.columns = list(
+                "LBP1D_256_{} std dev".format(i)
+                for i in range(np.shape(self.lbp1d_256)[1])
+            )[0:]
+            case = case.join(lbp1d_256_mean)
+            case = case.join(lbp1d_256_std)
 
         self.cases = pd.concat([self.cases, case], ignore_index=True)
 
@@ -125,8 +139,8 @@ class Dataset:
         # Compute constant-Q power spectrum with HOP Length 1024 and 128 bands
         C = librosa.cqt(
             y=audio.raw,
-            sr=Dataset.RATE,
-            hop_length=Dataset.HOP_LENGTH,
+            sr=int(self.config["segmentation"]["RATE"]),
+            hop_length=int(self.config["segmentation"]["HOP"]),
             n_bins=128,
             bins_per_octave=128,
         )
@@ -136,9 +150,9 @@ class Dataset:
         # Compute a chromagram from power spectrogram with HOP Length 1024 and 128 bands
         c = librosa.feature.chroma_stft(
             S=spectre,
-            n_fft=Dataset.FRAME,
-            sr=Dataset.RATE,
-            hop_length=Dataset.HOP_LENGTH,
+            n_fft=int(self.config["segmentation"]["FRAME"]),
+            sr=int(self.config["segmentation"]["RATE"]),
+            hop_length=int(self.config["segmentation"]["HOP"]),
             n_chroma=128,
         )
         self.chroma = c.transpose()
@@ -147,14 +161,19 @@ class Dataset:
         # Compute a gammatone filter bank from signal with HOP Length 1024 and 128 bands
         c = gammatone.gtgram.gtgram(
             audio.raw,
-            fs=Dataset.RATE,
-            window_time=Dataset.FRAME / Dataset.RATE,
-            hop_time=Dataset.HOP_LENGTH / Dataset.RATE,
+            fs=int(self.config["segmentation"]["RATE"]),
+            window_time=int(self.config["segmentation"]["FRAME"])
+            / int(self.config["segmentation"]["RATE"]),
+            hop_time=int(self.config["segmentation"]["HOP"])
+            / int(self.config["segmentation"]["RATE"]),
             channels=128,
             f_min=0,
         )
         nframes = int(
-            np.ceil((len(audio.data) / 1000.0 * Dataset.RATE) / Dataset.HOP_LENGTH)
+            np.ceil(
+                (len(audio.data) / 1000.0 * int(self.config["segmentation"]["RATE"]))
+                / int(self.config["segmentation"]["HOP"])
+            )
         )
         if c.shape[1] < nframes:  # pad first and last column
             c = np.insert(c, 0, 0, axis=1)
@@ -171,10 +190,20 @@ class Dataset:
         histoBin64 = 64
         histoBin256 = 256
         frames = int(
-            np.ceil(len(audio.data) / 1000.0 * Dataset.RATE / Dataset.HOP_LENGTH)
+            np.ceil(
+                len(audio.data)
+                / 1000.0
+                * int(self.config["segmentation"]["RATE"])
+                / int(self.config["segmentation"]["HOP"])
+            )
         )
         for f in range(0, frames):
-            frame = Dataset._get_frame(audio, f)
+            frame = Dataset._get_frame(
+                audio,
+                f,
+                int(self.config["segmentation"]["HOP"]),
+                int(self.config["segmentation"]["FRAME"]),
+            )
             frLgth = len(frame)
             histo64 = []
             histo256 = []
@@ -241,10 +270,20 @@ class Dataset:
         self.lbp1d_256 = []
         r = 4  # radius 4 and points 8
         frames = int(
-            np.ceil(len(audio.data) / 1000.0 * Dataset.RATE / Dataset.HOP_LENGTH)
+            np.ceil(
+                len(audio.data)
+                / 1000.0
+                * int(self.config["segmentation"]["RATE"])
+                / int(self.config["segmentation"]["HOP"])
+            )
         )
         for i in range(0, frames):
-            frame = Dataset._get_frame(audio, i)
+            frame = Dataset._get_frame(
+                audio,
+                i,
+                int(self.config["segmentation"]["HOP"]),
+                int(self.config["segmentation"]["FRAME"]),
+            )
             histoBin64 = 64
             histoBin256 = 256
             histo64 = []
@@ -442,20 +481,32 @@ class Dataset:
         # Zero-crossing rate
         self.zcr = []
         frames = int(
-            np.ceil((len(audio.data) / 1000.0 * Dataset.RATE) / Dataset.HOP_LENGTH)
+            np.ceil(
+                (len(audio.data) / 1000.0 * int(self.config["segmentation"]["RATE"]))
+                / int(self.config["segmentation"]["HOP"])
+            )
         )
 
         for i in range(0, frames):
-            frame = Dataset._get_frame(audio, i)
+            frame = Dataset._get_frame(
+                audio,
+                i,
+                int(self.config["segmentation"]["HOP"]),
+                int(self.config["segmentation"]["FRAME"]),
+            )
             self.zcr.append(np.mean(0.5 * np.abs(np.diff(np.sign(frame)))))
         self.zcr = np.asarray(self.zcr)
 
     @classmethod
-    def _get_frame(cls, audio, index):
+    def _get_frame(cls, audio, index, hop, frame):
         if index < 0:
             return None
-        return audio.raw[
-            (index * Dataset.HOP_LENGTH) : (index * Dataset.HOP_LENGTH + Dataset.FRAME)
+        return audio[
+            # (index * int(cls.config["segmentation"]["HOP"])) : (
+            #     index * int(cls.config["segmentation"]["HOP"])
+            #     + int(cls.config["segmentation"]["FRAME"])
+            # )
+            (index * hop) : (index * hop + frame)
         ]
 
     @classmethod
