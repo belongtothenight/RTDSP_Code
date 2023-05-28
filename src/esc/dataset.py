@@ -88,10 +88,20 @@ class Dataset:
             )[0:]
             case = case.join(mfcc_mean)
             case = case.join(mfcc_std)
+        if self.config["feature"]["LBP"] == "True":
+            self._compute_lbp(raw, 2)
+            lbp_mean = pd.DataFrame(np.mean(self.lbp[:, :], axis=0)[0:]).T
+            lbp_mean.columns = list(
+                "LBP_{} mean".format(i) for i in range(np.shape(self.lbp)[1])
+            )[0:]
+            lbp_std = pd.DataFrame(np.std(self.lbp[:, :], axis=0)[0:]).T
+            lbp_std.columns = list(
+                "LBP_{} std dev".format(i) for i in range(np.shape(self.lbp)[1])
+            )[0:]
+            case = case.join(lbp_mean)
+            case = case.join(lbp_std)
 
-        # if
-
-        self.cases = self.cases.append(case)
+        self.cases = pd.concat([self.cases, case], ignore_index=True)
 
         # * Save array to h5 file
         pass
@@ -493,3 +503,4 @@ if __name__ == "__main__":
     configFilePath = r"./src/esc/configfile.ini"
     dataset = Dataset(configFilePath)
     dataset._processAudio(0, 0)
+    print(dataset.cases)
