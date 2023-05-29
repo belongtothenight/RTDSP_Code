@@ -88,10 +88,15 @@ class Dataset:
                 self.categoryList.append(os.path.dirname(datasetPath))
                 self.fileList.append([])
                 for root, dirs, files in os.walk(datasetPath):
-                    for file in files:
-                        path = os.path.join(root, file)
-                        path = os.path.normpath(path)
-                        self.fileList[len(self.categoryList) - 1].append(path)
+                    print(dirs)
+                for dir in dirs:
+                    print(os.path.join(datasetPath, dir))
+                    for root, dirs, files in os.walk(os.path.join(datasetPath, dir)):
+                        for file in files:
+                            print(file)
+                            path = os.path.join(root, file)
+                            path = os.path.normpath(path)
+                            self.fileList[len(self.categoryList) - 1].append(path)
             if Dataset.config["multiDataset"]["level2"] == "True":
                 datasetPath = Dataset.config["path"]["level2"]
                 self.categoryList.append(os.path.dirname(datasetPath))
@@ -128,8 +133,8 @@ class Dataset:
                         path = os.path.join(root, file)
                         path = os.path.normpath(path)
                         self.fileList[len(self.categoryList) - 1].append(path)
-        print(self.categoryList)
-        print(self.fileList)
+        # print(self.categoryList)
+        # print(self.fileList)
         self.fileList = np.array(self.fileList)
         logging.info(
             f"Total number of files: {self.fileList.shape[0]} {self.fileList.shape[1]}"
@@ -710,22 +715,23 @@ class Dataset:
                 histo[i][int(img[i][j])] += 1
         return img, histo
 
-    def process(self):
+    def process(self, multiProcess=True):
         # todo : Multiprocess the "_processAudio" function
-        # * Multiprocessing
-        logging.info("Processing audio files.")
-        pool = mp.Pool(int(Dataset.config["experiment"]["max_process"]))
-        for i, val in enumerate(self.fileList):
-            for j, val in enumerate(val):
-                while pool._taskqueue.qsize() > int(
-                    Dataset.config["experiment"]["max_process"]
-                ):
-                    time.sleep(0.1)
-                logging.info("Adding process to queue: {} {}".format(i, j))
-                pool.apply_async(self._processAudio, args=(i, j, True))
-        pool.close()
-        pool.join()
-        logging.info("Added all processes to queue.")
+        if multiProcess:
+            # * Multiprocessing
+            logging.info("Processing audio files.")
+            pool = mp.Pool(int(Dataset.config["experiment"]["max_process"]))
+            for i, val in enumerate(self.fileList):
+                for j, val in enumerate(val):
+                    while pool._taskqueue.qsize() > int(
+                        Dataset.config["experiment"]["max_process"]
+                    ):
+                        time.sleep(0.1)
+                    logging.info("Adding process to queue: {} {}".format(i, j))
+                    pool.apply_async(self._processAudio, args=(i, j, True))
+            pool.close()
+            pool.join()
+            logging.info("Added all processes to queue.")
 
     def saveData(self):
         # * Save dataframe to csv file (only used when multiprocessing is disabled)
@@ -751,7 +757,7 @@ class Dataset:
 if __name__ == "__main__":
     start = time.time()
     dataset = Dataset()
-    dataset.loadAudioDatasetPath(multiSet=False)
+    dataset.loadAudioDatasetPath(multiSet=True)
     dataset.setupVariables()
     dataset.process()
     dataset.combineDataframe()

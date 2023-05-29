@@ -30,6 +30,10 @@ url = {<https://doi.org/10.7910/DVN/YDEPUT}>
 4. phone ring, door-bell
 5. traffic (police, firefighter, emergency, trash, normal)
 
+## Progress
+
+Function "loadAudioDatasetPath" option of multiSet is still buggy.
+
 ## Ideal Dataset Directory Structure
 
 |--- dataset folder
