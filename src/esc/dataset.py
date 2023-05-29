@@ -83,7 +83,7 @@ class Dataset:
         )
         self.cases = pd.DataFrame()
 
-    def _processAudio(self, indexA, indexB):
+    def _processAudio(self, indexA, indexB, multiprocessing=False):
         # todo : Make this function to perform audio segmentation and feature extraction for a single audio file
         self.audio = Dataset.Audio(
             self.fileList[indexA][indexB],
@@ -232,7 +232,13 @@ class Dataset:
                 case = case.join(chroma_std)
 
             self.cases = pd.concat([self.cases, case], ignore_index=True)
-            gc.collect()
+        gc.collect()
+        if multiprocessing:
+            case.to_csv(
+                Dataset.config["experiment"]["dataframe"].rstrip(".csv")
+                + "_{}_{}.csv".format(indexA, indexB),
+                index=False,
+            )
 
     def _compute_mel_mfcc(self, audio, mfcc):
         # Compute Mel Spectogram with 2048 FFT window length, HOP Length 1024, 128 bands
@@ -648,25 +654,55 @@ class Dataset:
         # todo : Multiprocess the "_processAudio" function
         # * Multiprocessing
         logging.info("Processing audio files.")
+        self.fileList = np.array(self.fileList)
+        logging.info(
+            f"Total number of files: {self.fileList.shape[0]} {self.fileList.shape[1]}"
+        )
+        pool = mp.Pool(int(Dataset.config["experiment"]["max_process"]))
         for i, val in enumerate(self.fileList):
             for j, val in enumerate(val):
+                while pool._taskqueue.qsize() > int(
+                    Dataset.config["experiment"]["max_process"]
+                ):
+                    time.sleep(0.1)
                 logging.info("Adding process to queue: {} {}".format(i, j))
-                p = mp.Process(target=self._processAudio, args=(i, j))
-                p.start()
+                pool.apply_async(self._processAudio, args=(i, j, True))
+        pool.close()
+        pool.join()
         logging.info("Added all processes to queue.")
 
     def saveData(self):
-        # * Save dataframe to h5 file
-        self.cases.to_hdf(
-            Dataset.config["experiment"]["dataframe"],
-            key=Dataset.config["experiment"]["dataset"],
-            mode="w",
+        # * Save dataframe to csv file (only used when multiprocessing is disabled)
+        print(self.cases)
+        self.cases.to_csv(
+            Dataset.config["experiment"]["dataframe"], mode="w", index=False
         )
+
+    def combineDataframe(self):
+        # * Combine all the csv files into one (only used when multiprocessing is enabled)
+        path = os.path.dirname(Dataset.config["experiment"]["dataframe"])
+        files = os.listdir(path)
+        df = pd.DataFrame()
+        for f in files:
+            if Dataset.config["experiment"]["dataset"] in f:
+                logging.info("Adding {} to dataframe.".format(f))
+                data = pd.read_csv(os.path.join(path, f))
+                df = pd.concat([df, data], ignore_index=True)
+                os.remove(os.path.join(path, f))
+        df.to_csv(Dataset.config["experiment"]["dataframe"], mode="w", index=False)
 
 
 if __name__ == "__main__":
     start = time.time()
     dataset = Dataset()
+    dataset.process()
+    dataset.combineDataframe()
+    end = time.time()
+    print("Time taken: {} seconds".format(end - start))
+    print("Time taken: {} minutes".format((end - start) / 60))
+    print("Time taken: {} hours".format((end - start) / 3600))
+
+    # * Test dataset
     # dataset._processAudio(0, 0)
     # print(dataset.cases)
     # print(dataset.cases.columns)
@@ -679,10 +715,3 @@ if __name__ == "__main__":
     # with open("value.txt", "w") as f:
     #     for i in row.values.tolist():
     #         f.write(str(i) + "\n")
-
-    dataset.process()
-    dataset.saveData()
-    end = time.time()
-    print("Time taken: {} seconds".format(end - start))
-    print("Time taken: {} minutes".format((end - start) / 60))
-    print("Time taken: {} hours".format((end - start) / 3600))
