@@ -735,7 +735,9 @@ class Dataset:
             for i, val in enumerate(self.fileList):
                 for j, val in enumerate(val):
                     logging.info("Processing: {} {}".format(i, j))
+                    start = time.time()
                     self._processAudio(i, j, False)
+                    print("Time taken: {} seconds".format(time.time() - start))
 
     def saveData(self):
         # * Save dataframe to csv file (only used when multiprocessing is disabled)
