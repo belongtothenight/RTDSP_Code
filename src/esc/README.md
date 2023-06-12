@@ -32,7 +32,7 @@ url = {<https://doi.org/10.7910/DVN/YDEPUT}>
 
 ## Progress
 
-Function "loadAudioDatasetPath" option of multiSet is still buggy.
+Multiprocessing is so bugged so how.
 
 ## Ideal Dataset Directory Structure
 

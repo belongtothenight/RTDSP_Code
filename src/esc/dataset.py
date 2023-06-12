@@ -85,56 +85,54 @@ class Dataset:
         else:
             if Dataset.config["multiDataset"]["level1"] == "True":
                 datasetPath = Dataset.config["path"]["level1"]
-                self.categoryList.append(os.path.dirname(datasetPath))
-                self.fileList.append([])
-                for root, dirs, files in os.walk(datasetPath):
-                    print(dirs)
-                for dir in dirs:
-                    print(os.path.join(datasetPath, dir))
-                    for root, dirs, files in os.walk(os.path.join(datasetPath, dir)):
-                        for file in files:
-                            print(file)
-                            path = os.path.join(root, file)
-                            path = os.path.normpath(path)
-                            self.fileList[len(self.categoryList) - 1].append(path)
+                for folder in os.listdir(datasetPath):
+                    self.categoryList.append(folder)
+                    tmpFileList = []
+                    for file in os.listdir(os.path.join(datasetPath, folder)):
+                        path = os.path.join(datasetPath, folder, file)
+                        path = os.path.normpath(path)
+                        tmpFileList.append(path)
+                    self.fileList.append(tmpFileList)
             if Dataset.config["multiDataset"]["level2"] == "True":
                 datasetPath = Dataset.config["path"]["level2"]
-                self.categoryList.append(os.path.dirname(datasetPath))
-                self.fileList.append([])
-                for root, dirs, files in os.walk(datasetPath):
-                    for file in files:
-                        path = os.path.join(root, file)
+                for folder in os.listdir(datasetPath):
+                    self.categoryList.append(folder)
+                    tmpFileList = []
+                    for file in os.listdir(os.path.join(datasetPath, folder)):
+                        path = os.path.join(datasetPath, folder, file)
                         path = os.path.normpath(path)
-                        self.fileList[len(self.categoryList) - 1].append(path)
+                        tmpFileList.append(path)
+                    self.fileList.append(tmpFileList)
             if Dataset.config["multiDataset"]["level3"] == "True":
                 datasetPath = Dataset.config["path"]["level3"]
-                self.categoryList.append(os.path.dirname(datasetPath))
-                self.fileList.append([])
-                for root, dirs, files in os.walk(datasetPath):
-                    for file in files:
-                        path = os.path.join(root, file)
+                for folder in os.listdir(datasetPath):
+                    self.categoryList.append(folder)
+                    tmpFileList = []
+                    for file in os.listdir(os.path.join(datasetPath, folder)):
+                        path = os.path.join(datasetPath, folder, file)
                         path = os.path.normpath(path)
-                        self.fileList[len(self.categoryList) - 1].append(path)
+                        tmpFileList.append(path)
+                    self.fileList.append(tmpFileList)
             if Dataset.config["multiDataset"]["level4"] == "True":
                 datasetPath = Dataset.config["path"]["level4"]
-                self.categoryList.append(os.path.dirname(datasetPath))
-                self.fileList.append([])
-                for root, dirs, files in os.walk(datasetPath):
-                    for file in files:
-                        path = os.path.join(root, file)
+                for folder in os.listdir(datasetPath):
+                    self.categoryList.append(folder)
+                    tmpFileList = []
+                    for file in os.listdir(os.path.join(datasetPath, folder)):
+                        path = os.path.join(datasetPath, folder, file)
                         path = os.path.normpath(path)
-                        self.fileList[len(self.categoryList) - 1].append(path)
+                        tmpFileList.append(path)
+                    self.fileList.append(tmpFileList)
             if Dataset.config["multiDataset"]["level5"] == "True":
                 datasetPath = Dataset.config["path"]["level5"]
-                self.categoryList.append(os.path.dirname(datasetPath))
-                self.fileList.append([])
-                for root, dirs, files in os.walk(datasetPath):
-                    for file in files:
-                        path = os.path.join(root, file)
+                for folder in os.listdir(datasetPath):
+                    self.categoryList.append(folder)
+                    tmpFileList = []
+                    for file in os.listdir(os.path.join(datasetPath, folder)):
+                        path = os.path.join(datasetPath, folder, file)
                         path = os.path.normpath(path)
-                        self.fileList[len(self.categoryList) - 1].append(path)
-        # print(self.categoryList)
-        # print(self.fileList)
+                        tmpFileList.append(path)
+                    self.fileList.append(tmpFileList)
         self.fileList = np.array(self.fileList)
         logging.info(
             f"Total number of files: {self.fileList.shape[0]} {self.fileList.shape[1]}"
@@ -300,7 +298,7 @@ class Dataset:
         gc.collect()
         if multiprocessing:
             case.to_csv(
-                Dataset.config["experiment"]["dataframe"].rstrip(".csv")
+                Dataset.config["experiment"]["dataset"]
                 + "_{}_{}.csv".format(indexA, indexB),
                 index=False,
             )
@@ -732,6 +730,12 @@ class Dataset:
             pool.close()
             pool.join()
             logging.info("Added all processes to queue.")
+        else:
+            logging.info("Processing audio files.")
+            for i, val in enumerate(self.fileList):
+                for j, val in enumerate(val):
+                    logging.info("Processing: {} {}".format(i, j))
+                    self._processAudio(i, j, False)
 
     def saveData(self):
         # * Save dataframe to csv file (only used when multiprocessing is disabled)
@@ -759,8 +763,9 @@ if __name__ == "__main__":
     dataset = Dataset()
     dataset.loadAudioDatasetPath(multiSet=True)
     dataset.setupVariables()
-    dataset.process()
-    dataset.combineDataframe()
+    dataset.process(multiProcess=False)
+    dataset.saveData()
+    # dataset.combineDataframe()
     end = time.time()
     print("Time taken: {} seconds".format(end - start))
     print("Time taken: {} minutes".format((end - start) / 60))
