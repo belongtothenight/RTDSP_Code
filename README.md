@@ -29,6 +29,7 @@
 | 23. | [w14/LMS.m](https://github.com/belongtothenight/RTDSP_Code/blob/main/src/w14/LMS.m)                                   | Custom coded LMS adaptive filter.                                                                    |
 | 24. | [w14/NLMS.m](https://github.com/belongtothenight/RTDSP_Code/blob/main/src/w14/NLMS.m)                                 | Custom coded NLMS adaptive filter.                                                                   |
 | 25. | [w14/adaptiveFilterTester.m](https://github.com/belongtothenight/RTDSP_Code/blob/main/src/w14/adaptiveFilterTester.m) | LMS adaptive filter tester.                                                                          |
+| 26. | [Environmental Sound Classification with ML](https://github.com/belongtothenight/RTDSP_Code/tree/main/src/esc)        | ESC with ML models like KNN, RF, and SVM.                                                            |
 
 ## Notes
 
